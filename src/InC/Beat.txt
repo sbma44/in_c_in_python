@@ -1,0 +1,11 @@
+# formatting guidance!
+# R = rest
+# notes... well, you know this better than me
+# number = duration of note/rest in sixteenths. comes after R/Note and a comma
+# lines beginning with a hash character will be treated as comments
+# do these as individual files, if you don't mind.
+
+# number Beat
+C-7,2 C-8,2
+
+#I put both of these on the same line because they should be played at the same time if possible.

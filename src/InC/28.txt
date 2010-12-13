@@ -1,0 +1,15 @@
+# formatting guidance!
+# R = rest
+# notes... well, you know this better than me
+# number = duration of note/rest in sixteenths. comes after R/Note and a comma
+# lines beginning with a hash character will be treated as comments
+# do these as individual files, if you don't mind.
+
+# number 28
+
+E-4,1
+F#-4,1
+E-4,1
+F#-4,1
+E-4,3
+E-4,1
