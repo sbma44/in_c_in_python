@@ -56,7 +56,7 @@ class Conductor(object):
 
         self.players = [ Player() ] * NUM_PLAYERS
 
-        fluidsynth.init('./sf/steinway.sf2')
+        fluidsynth.init(SOUNDFONT_FILE)
 
 
     def _build_piece_events(self):
