@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+   <head>
+      <title>{{ title }}</title>
+      <script type="text/javascript" src="/static/jquery-1.4.4.min.js"></script>
+   </head>
+   <body>
+     <ul>
+       {% for piece in pieces %}
+         <li>{{ escape(piece) }}</li>
+       {% end %}
+     </ul>
+   </body>
+ </html>
