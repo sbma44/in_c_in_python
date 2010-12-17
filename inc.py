@@ -1,4 +1,4 @@
-import sys, time
+import sys, time, os
 from mingus.midi import fluidsynth
 from mingus.containers import *
 import tornado.httpserver
@@ -38,24 +38,56 @@ class Player(object):
         self.octave_shift = octave_shift
         self.instrument = instrument
         self.channel = channel
+        self.velocity = 70
+        self.last_note = None
+    
+    def increase_velocity(self):
+        self.velocity = min(self.velocity + 10, 110)
+        
+    def decrease_velocity(self):
+        self.velocity = max(self.velocity - 10, 0)
+    
+    def stop_note(self, note=None):
+        # note param is not currently used, but would be necessary if we added support for chords
+        global fluidsynth
+        if self.last_note is not None:
+            print "stopping note %s" % str(self.last_note)
+            fluidsynth.stop_Note(self.last_note, self.channel)
+            self.last_note = None            
+    
+    def play_note(self, note):
+        print "playing note %s" % str(note)
+        global fluidsynth
+        fluidsynth.play_Note(note, self.channel, self.velocity)        
+        self.last_note = note
+        
+    def __str__(self):
+        return "<Player %s/%d/%d>" % (self.piece, self.channel, self.velocity)
 
 
-class MainHandler(tornado.web.RequestHandler):
+class AdminHandler(tornado.web.RequestHandler):
     def get(self):
-        self.write("Hello, world")
+        self.render("%sadmin.html" % TEMPLATE_DIR, title="In C Admin", pieces=self.pieces)
         
 
 class Conductor(object):    
     def __init__(self):
         super(Conductor, self).__init__()
 
-        self.global_offset = 0
-
+        self.tic = 0
+        self.time_interval = 60.0 / (TICS_PER_MINUTE * 1.0)
+        print "time interval is %f" % self.time_interval
         self.pieces = inc_io.load()
         self._build_piece_events()
+        self.piece_lengths = {}
+        for (i,p) in self.piece_events.items():
+            self.piece_lengths[i] = len(self.piece_events[i])        
 
-        self.players = [ Player() ] * NUM_PLAYERS
+        self.players = []
+        for i in range(0, NUM_PLAYERS):
+            self.players.append(Player())
 
+        global fluidsynth
         fluidsynth.init(SOUNDFONT_FILE)
 
 
@@ -110,20 +142,50 @@ class Conductor(object):
                     currently_playing[i] = note_event
                         
     def start_webserver(self):
+        print "Starting webserver..."
+        settings = {
+            "static_path": os.path.join(os.path.dirname(__file__), "web", "static"),
+        }
         self.application = tornado.web.Application([
-            (r"/", MainHandler),
-        ])
+            (r"/", AdminHandler),
+        ], **settings)
 
         self.http_server = tornado.httpserver.HTTPServer(self.application)
         self.http_server.listen(8888)
-        tornado.ioloop.IOLoop.instance().start()
+        # tornado.ioloop.IOLoop.instance().start()        
                 
     def muster(self):
-        pass            
+        print "Staging..."
+        self.players[0].piece = '1'
+        self.players[0].channel = 1
+        self.players[0].offset = 0
     
     def loop(self):
-        while True:
-            time.sleep(1)
+        print "Starting loop..."
+        print map(lambda x: str(x), self.players)
+        while True:            
+            for (i,player) in enumerate(self.players):
+                if player.piece is None:
+                    continue
+                
+                print player
+
+                events = self.piece_events[player.piece][(self.tic + player.offset) % self.piece_lengths[player.piece]]
+                if len(events)==0:
+                    continue
+                else:
+                    print events
+                    for (note_on, note) in events:                            
+                        if note_on:
+                            player.play_note(note)
+                        else:
+                            player.stop_note(note)
+                                    
+            time.sleep(self.time_interval)    
+            self.tic += 1           
+            print self.tic 
+            
+            time.sleep(self.time_interval)
 
 
 def main():
