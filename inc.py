@@ -1,6 +1,7 @@
 import sys, time, os
-from mingus.midi import fluidsynth
+# from mingus.midi import fluidsynth
 from mingus.containers import *
+import OSC
 import tornado.httpserver
 import tornado.ioloop
 import tornado.web
@@ -10,6 +11,34 @@ try:
     import json
 except:
     import simplejson as json
+
+class Occam(object):
+    """ OSC/MIDI Bridge """
+    def __init__(self):
+        super(Occam, self).__init__()
+        self.client = OSC.OSCClient()
+        self.client.connect( OCCAM_SERVERS[0] )
+
+        self.note_on = OSC.OSCMessage()
+        self.note_on.setAddress("/osc/midi/out/noteOn")
+
+        self.note_off = OSC.OSCMessage()
+        self.note_off.setAddress("/osc/midi/out/noteOff")
+        
+    def play_Note(self, note, channel, velocity):
+        self.note_on.clearData()
+        self.note_on.append(int(note))
+        self.note_on.append(channel)
+        self.note_on.append(velocity)
+        self.client.send(self.note_on)
+        
+    def stop_Note(self, note, channel):
+        self.note_off.clearData()
+        self.note_off.append(int(note))
+        self.note_off.append(channel)
+        self.note_off.append(120)
+        self.client.send(self.note_off)
+
 
 class NoteEvent(Note):
     def __init__(self, name='C', octave=4, dynamics={}, duration=1, is_rest=False):
@@ -49,16 +78,16 @@ class Player(object):
     
     def stop_note(self, note=None):
         # note param is not currently used, but would be necessary if we added support for chords
-        global fluidsynth
+        global occam
         if self.last_note is not None:
             print "stopping note %s" % str(self.last_note)
-            fluidsynth.stop_Note(self.last_note, self.channel)
+            occam.stop_Note(self.last_note, self.channel)
             self.last_note = None            
     
     def play_note(self, note):
         print "playing note %s" % str(note)
-        global fluidsynth
-        fluidsynth.play_Note(note, self.channel, self.velocity)        
+        global occam
+        occam.play_Note(note, self.channel, self.velocity)        
         self.last_note = note
         
     def __str__(self):
@@ -87,8 +116,8 @@ class Conductor(object):
         for i in range(0, NUM_PLAYERS):
             self.players.append(Player())
 
-        global fluidsynth
-        fluidsynth.init(SOUNDFONT_FILE)
+        global occam
+        occam = Occam()
 
 
     def _build_piece_events(self):
@@ -162,7 +191,7 @@ class Conductor(object):
     
     def loop(self):
         print "Starting loop..."
-        print map(lambda x: str(x), self.players)
+        # print map(lambda x: str(x), self.players)
         while True:            
             for (i,player) in enumerate(self.players):
                 if player.piece is None:

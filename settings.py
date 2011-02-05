@@ -4,3 +4,5 @@ JSON_FILENAME = 'src/InC.json'
 NUM_PLAYERS = 15
 SOUNDFONT_FILE = 'sf/steinway.sf2'
 TEMPLATE_DIR = 'web/template/'
+
+OCCAM_SERVERS = [('127.0.0.1', 57117)]
