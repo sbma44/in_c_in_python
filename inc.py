@@ -1,16 +1,12 @@
 import sys, time, os, signal
-# from mingus.midi import fluidsynth
+import tornado.httpserver, tornado.ioloop, tornado.web
 from mingus.containers import *
 import OSC
-import tornado.httpserver
-import tornado.ioloop
-import tornado.web
-import inc_io
+import music_loader as inc_io
+import ui
 from settings import *
-try:
-    import json
-except:
-    import simplejson as json
+
+conductor = None
 
 class Occam(object):
     """ OSC/MIDI Bridge """
@@ -78,48 +74,55 @@ class Player(object):
     
     def stop_note(self, note=None):
         # note param is not currently used, but would be necessary if we added support for chords
-        global occam
+        # global conductor
         if self.last_note is not None:
             print "stopping note %s" % str(self.last_note)
-            occam.stop_Note(self.last_note, self.channel)
+            conductor.occam.stop_Note(self.last_note, self.channel)
             self.last_note = None            
     
     def play_note(self, note):
         print "playing note %s" % str(note)
-        global occam
-        occam.play_Note(note, self.channel, self.velocity)        
+        # global conductor
+        conductor.occam.play_Note(note, self.channel, self.velocity)        
         self.last_note = note
         
     def __str__(self):
         return "<Player %s/%d/%d>" % (self.piece, self.channel, self.velocity)
 
 
+
 class AdminHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("%sadmin.html" % TEMPLATE_DIR, title="In C Admin", pieces=self.pieces)
-        
+
+
 
 class Conductor(object):    
     def __init__(self):
         super(Conductor, self).__init__()
 
+        # set performance constants
         self.tic = 0
         self.time_interval = 60.0 / (TICS_PER_MINUTE * 1.0)
-        print "time interval is %f" % self.time_interval
+
+        # load music
         self.pieces = inc_io.load()
         self._build_piece_events()
         self.piece_lengths = {}
         for (i,p) in self.piece_events.items():
             self.piece_lengths[i] = len(self.piece_events[i])        
 
+        # interprocess stuff
         self.webserver_pid = None
+        self.rx, self.tx = os.pipe() # set up interprocess communication
 
+        # initialize player objects
         self.players = []
         for i in range(0, NUM_PLAYERS):
             self.players.append(Player())
 
-        global occam
-        occam = Occam()
+        # create MIDI bridge
+        self.occam = Occam()
 
 
     def _build_piece_events(self):
@@ -178,11 +181,9 @@ class Conductor(object):
             "static_path": os.path.join(os.path.dirname(__file__), "web", "static"),
         }
         self.application = tornado.web.Application([
-            (r"/", AdminHandler),
+            (r"/", ui.AdminHandler),
         ], **settings)
-
-
-        self.rx, self.tx = os.pipe()
+        
         self.webserver_pid = os.fork()
         if self.webserver_pid==0: # in child process
             self.http_server = tornado.httpserver.HTTPServer(self.application)
@@ -203,7 +204,6 @@ class Conductor(object):
     
     def loop(self):
         print "Starting loop..."
-        # print map(lambda x: str(x), self.players)
         while True:            
             for (i,player) in enumerate(self.players):
                 if player.piece is None:
@@ -230,13 +230,17 @@ class Conductor(object):
             
     def finish(self):
         """ Clean up lingering notes and processes """
+
+        # get rid of the webserver zombie process
         os.kill(self.webserver_pid, signal.SIGTERM) 
 
+        # silence lingering notes
         for p in self.players:
             if p.last_note is not None:
                 p.stop_note(p.last_note)
 
 def main():
+    global conductor
     conductor = Conductor()
     conductor.start_webserver()
     conductor.muster()
@@ -249,27 +253,6 @@ def main():
         conductor.finish()
 
 
-def main2():
-    notes = ['B-3', 'C-4', 'D-4', 'E-4', 'F-4', 'G-4', 'A-4', 'B-4', 'C-5']
-
-    nc = NoteContainer()
-    for tn in notes:
-        # print tn
-        n = Note(tn, 4)
-        n.velocity = 100
-        n.channel = 1
-        nc += n
-
-    # print nc
-
-    for (i, note) in enumerate(nc):
-        fluidsynth.play_Note(note)
-        time.sleep(0.2)
-        if (i%2)==0:
-            # fluidsynth.stop_Note(note)
-            continue
-
-    time.sleep(2)
     
 if __name__ == '__main__':
     main()
