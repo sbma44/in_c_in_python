@@ -1,4 +1,4 @@
-import sys, time, os
+import sys, time, os, signal
 # from mingus.midi import fluidsynth
 from mingus.containers import *
 import OSC
@@ -112,6 +112,8 @@ class Conductor(object):
         for (i,p) in self.piece_events.items():
             self.piece_lengths[i] = len(self.piece_events[i])        
 
+        self.webserver_pid = None
+
         self.players = []
         for i in range(0, NUM_PLAYERS):
             self.players.append(Player())
@@ -179,9 +181,14 @@ class Conductor(object):
             (r"/", AdminHandler),
         ], **settings)
 
-        self.http_server = tornado.httpserver.HTTPServer(self.application)
-        self.http_server.listen(8888)
-        # tornado.ioloop.IOLoop.instance().start()        
+
+        self.rx, self.tx = os.pipe()
+        self.webserver_pid = os.fork()
+        if self.webserver_pid==0: # in child process
+            self.http_server = tornado.httpserver.HTTPServer(self.application)
+            self.http_server.listen(8888)
+            tornado.ioloop.IOLoop.instance().start()
+                
                 
     def muster(self):
         print "Staging..."
@@ -222,7 +229,9 @@ class Conductor(object):
             time.sleep(self.time_interval)
             
     def finish(self):
-        """ Clean up lingering notes """
+        """ Clean up lingering notes and processes """
+        os.kill(self.webserver_pid, signal.SIGTERM) 
+
         for p in self.players:
             if p.last_note is not None:
                 p.stop_note(p.last_note)
