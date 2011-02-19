@@ -27,15 +27,15 @@ class Occam(object):
         
     def play_Note(self, note, channel, velocity):
         self.note_on.clearData()
-        self.note_on.append(int(note))
         self.note_on.append(channel)
+        self.note_on.append(int(note))
         self.note_on.append(velocity)
         self.client.send(self.note_on)
         
     def stop_Note(self, note, channel):
         self.note_off.clearData()
-        self.note_off.append(int(note))
         self.note_off.append(channel)
+        self.note_off.append(int(note))
         self.note_off.append(120)
         self.client.send(self.note_off)
 
@@ -188,6 +188,11 @@ class Conductor(object):
         self.players[0].piece = '1'
         self.players[0].channel = 1
         self.players[0].offset = 0
+
+        self.players[1].piece = '2'
+        self.players[1].channel = 2
+        self.players[1].offset = 0
+
     
     def loop(self):
         print "Starting loop..."
@@ -197,13 +202,13 @@ class Conductor(object):
                 if player.piece is None:
                     continue
                 
-                print player
+                # print player
 
                 events = self.piece_events[player.piece][(self.tic + player.offset) % self.piece_lengths[player.piece]]
                 if len(events)==0:
                     continue
                 else:
-                    print events
+                    # print events
                     for (note_on, note) in events:                            
                         if note_on:
                             player.play_note(note)
@@ -215,13 +220,24 @@ class Conductor(object):
             print self.tic 
             
             time.sleep(self.time_interval)
-
+            
+    def finish(self):
+        """ Clean up lingering notes """
+        for p in self.players:
+            if p.last_note is not None:
+                p.stop_note(p.last_note)
 
 def main():
     conductor = Conductor()
     conductor.start_webserver()
     conductor.muster()
-    conductor.loop()
+    
+    try:
+        conductor.loop()
+    except:
+        pass
+    finally:
+        conductor.finish()
 
 
 def main2():
@@ -229,13 +245,13 @@ def main2():
 
     nc = NoteContainer()
     for tn in notes:
-        print tn
+        # print tn
         n = Note(tn, 4)
         n.velocity = 100
         n.channel = 1
         nc += n
 
-    print nc
+    # print nc
 
     for (i, note) in enumerate(nc):
         fluidsynth.play_Note(note)
