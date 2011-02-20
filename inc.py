@@ -16,11 +16,23 @@ conductor = None
 
 class IndexHandler(tornado.web.RequestHandler):
     def get(self):
-        self.render("%sadmin.html" % TEMPLATE_DIR, title="In C Admin", players=conductor.players)
+        self.render("%sindex.html" % TEMPLATE_DIR, title="In C Admin", players=conductor.players)
+
+class StatusHandler(tornado.web.RequestHandler):
+    def get(self):
+        start_time = time.time()
+        conductor.send_message({'_': 'status'})
+
+        # wait for the state update that should come back
+        while conductor.last_state_update<start_time:
+            conductor.handle_messages()
+            time.sleep(0.01)
+        
+        self.write(conductor.last_state_json)
+        conductor.log('served result in %f seconds' % (time.time() - start_time))
 
 class ActionHandler(tornado.web.RequestHandler):
     def get(self):    
-        conductor.dblog('serving request')            
         try:
             player_id = int(self.get_argument('player'))
         except:
@@ -29,8 +41,16 @@ class ActionHandler(tornado.web.RequestHandler):
         if player_id<0 or player_id>=len(conductor.players):
             return
 
+        start_time = time.time()
         conductor.send_message({'_': 'toggle', 'player': player_id })
-        self.write('1')
+
+        # wait for the state update that should come back
+        while conductor.last_state_update<start_time:
+            conductor.handle_messages()
+            time.sleep(0.01)
+        
+        self.write(conductor.last_state_json)
+        conductor.log('served result in %f seconds' % (time.time() - start_time))
 
 class Conductor(object):    
     def __init__(self):
@@ -49,6 +69,7 @@ class Conductor(object):
 
         # interprocess stuff
         self.webserver_pid = None
+        self.is_webserver_process = False
         self.web_rx, self.web_tx = os.pipe()
         self.inc_rx, self.inc_tx = os.pipe()
         # set pipes to not block
@@ -56,6 +77,8 @@ class Conductor(object):
         fcntl.fcntl(self.web_tx, fcntl.F_SETFL, os.O_NONBLOCK)
         fcntl.fcntl(self.inc_rx, fcntl.F_SETFL, os.O_NONBLOCK)
         fcntl.fcntl(self.inc_tx, fcntl.F_SETFL, os.O_NONBLOCK)
+        self.last_state_update = 0
+        self.last_state_json = ''
 
         # initialize player objects
         self.players = []
@@ -65,28 +88,47 @@ class Conductor(object):
         # create MIDI bridge
         self.occam = Occam()
 
-    def dblog(msg):
-        conductor.send_message({'_':'log','message':msg})
 
+    def toggle_player(self, i):
+        if type(i) is not int:
+            return
+        if i<0 or i>=len(self.players):
+            return
+
+        self.players[i].mute = not self.players[i].mute
+        if self.players[i].mute and self.players[i].last_note is not None:
+            self.players[i].stop_note(self.players[i].last_note)
+
+        # print "player %d muted: %s" % (i, str(self.players[i].mute))
+
+        
+    def _print_log_message(self, msg):
+        print "LOG: %s" % msg
+        
+    def log(self, msg):
+        if self.is_webserver_process:
+            self.send_message({'_':'log','message':msg})
+        else:
+            self._print_log_message(msg)
 
     def send_message(self, msg):  
         assert type(msg) is dict
 
         try:      
-            socket = self.webserver_pid==0 and self.web_tx or self.inc_tx
+            socket = self.is_webserver_process and self.web_tx or self.inc_tx
 
-            msg['time'] = time.time()
+            msg['_t'] = time.time()
             encoded_msg = json.dumps(msg)
             if len(encoded_msg)>MAX_MESSAGE_SIZE:
-                self.dblog('Error: JSON package too large.')
+                self.log('Error: JSON package too large.')
             else:
                 os.write(socket, "%s\n" % encoded_msg)
         except Exception, e:
-            self.dblog(str(e))
+            self.log(str(e))
 
 
     def check_messages(self):
-        if self.webserver_pid!=0:
+        if not self.is_webserver_process:
             socket = self.web_rx
             buf_i = 0
         else:    
@@ -112,24 +154,19 @@ class Conductor(object):
         decoded_messages = []
         for m in messages:
             try:
-                decoded_messages.append(json.loads(m))
+                decoded_messages.append((json.loads(m), m))
             except:
-                decoded_messages.append({'_': 'decode_failure', 'data': m})
+                decoded_messages.append(({'_': 'decode_failure'}, m))
 
         return decoded_messages
-
-
-    def toggle_player(self, i):
-        if type(i) is not int:
-            return
-        if i<0 or i>=len(self.players):
-            return
-
-        self.conductor.players[i].mute = not self.conductor.players[i].mute
-        if self.conductor.players[i].last_note is not None:
-            self.conductor.players[i].stop_note(self.conductor.players[i].last_note)
-
-        print "player %d muted: %s" % (i, str(self.conductor.players[i].mute))
+        
+    def send_state(self):
+        message = { '_': 'state_xfer', 'player_keys': [], 'players': {} }
+        for (i,p) in enumerate(self.players):
+            self.players[i].key = i # ensure that player objects know how to refer to themselves when speaking to the conductor
+            message['players'][p.name] = p.to_dict()
+            message['player_keys'].append(p.key)
+        self.send_message(message)
 
     def _build_piece_events(self):
         # play event example (note: not actual piece data)
@@ -189,36 +226,59 @@ class Conductor(object):
         }
         self.application = tornado.web.Application([
             (r'/', IndexHandler),
-            (r'/action', ActionHandler)
+            (r'/action', ActionHandler),
+            (r'/status', StatusHandler),
         ], **settings)
 
         self.webserver_pid = os.fork()
         if self.webserver_pid==0: # in child process
+            self.is_webserver_process = True
             self.http_server = tornado.httpserver.HTTPServer(self.application)
             self.http_server.listen(8888)
             tornado.ioloop.IOLoop.instance().start()
 
 
-    def muster(self):
-        for i in range(1, 6):
-            self.players[i].piece = str(i)
-            self.players[i].channel = i
+    def create_dummy_players(self):
+        for i in range(0, NUM_PLAYERS):
+            self.players[i].piece = str(i+1)
+            self.players[i].channel = i+1
             self.players[i].offset = 0
 
+        for (i,p) in enumerate(self.players):
+            self.players[i].name = i
+            
+    def muster(self):
+        pass
 
-    def deal_with_input(self):
+
+    def handle_messages(self):
         msgs = self.check_messages()
-        for m in msgs:
-            if m['_']=='toggle':
+        for (m, src) in msgs:
+            action = m['_']
+
+            if action=='toggle':
                 try:
                     player_id = int(m['player'])
                 except:
-                    return
+                    continue
                 self.toggle_player(player_id)
-            elif m['_']=='decode_failure':
-                print "Failed to decode JSON message: %s" % m['data']
-            elif m['_']=='log':
-                print "LOG: %s" % m['message']
+                self.send_state()
+
+            elif action=='state_xfer':
+                for (i,p) in m['players'].items():
+                    self.players[int(i)].from_dict(p)
+                self.last_state_update = m['_t']     
+                self.last_state_json = src
+            
+            elif action=='status':
+                self.send_state()
+
+            elif action=='decode_failure':
+                print "Failed to decode JSON message: %s" % src
+
+            elif action=='log':
+                self._print_log_message(m['message'])
+
 
     def loop(self):
         print "Starting loop..."
@@ -240,9 +300,8 @@ class Conductor(object):
 
             time.sleep(self.time_interval)    
             self.tic += 1           
-            # print self.tic 
 
-            self.deal_with_input()
+            self.handle_messages()
 
             time.sleep(self.time_interval)
 
@@ -260,6 +319,7 @@ class Conductor(object):
 def main():
     global conductor
     conductor = Conductor()
+    conductor.create_dummy_players()
     conductor.start_webserver()
     conductor.muster()
     

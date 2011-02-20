@@ -6,6 +6,8 @@ except Exception, e:
 
 class Player(object):    
     def __init__(self, conductor, piece=None, offset=0, octave_shift=0, instrument=None, channel=None):
+        self.name = ''
+        self.key = -1
         self.conductor = conductor
         self.piece = piece
         self.offset = offset
@@ -37,15 +39,14 @@ class Player(object):
     def __str__(self):
         return "<Player %s/%d/%d>" % (self.piece, self.channel, self.velocity)
         
-    def to_json(self):
-        return json.dumps({'piece': self.piece, 'offset': self.offset, 'octave_shift': self.octave_shift, 'instrument': self.instrument, 'channel': self.channel, 'velocity': self.velocity, 'mute': self.mute})
+    def to_dict(self):
+        return {'piece': self.piece, 'offset': self.offset, 'octave_shift': self.octave_shift, 'instrument': self.instrument, 'channel': self.channel, 'velocity': self.velocity, 'mute': self.mute}
 
-    def from_json(self, j):
-        data = json.loads(j)
+    def from_dict(self, data):
         self.piece = str(data['piece'])
         self.offset = int(data['offset'])
         self.octave_shift = int(data['octave_shift'])
-        self.instrument = int(data['instrument'])
-        self.channel = int(data['channel'])
+        self.instrument = data['instrument']
+        self.channel = data['channel'] is not None and int(data['channel']) or None
         self.velocity = int(data['velocity'])
         self.mute = data['mute']

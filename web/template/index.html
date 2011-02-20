@@ -1,0 +1,73 @@
+<!DOCTYPE html> 
+<html> 
+	<head> 
+	<title>In C</title> 
+	<link rel="stylesheet" href="/static/jquery.mobile-1.0a3.min.css" />
+	<script type="text/javascript" src="/static/jquery-1.4.3.min.js"></script>
+	<script type="text/javascript" src="/static/jquery.mobile-1.0a3.min.js"></script>
+</head> 
+<body> 
+
+<div data-role="page">
+
+	<div data-role="header">
+		<h1>In C</h1>
+	</div><!-- /header -->
+
+	<div data-role="content">	
+
+    {% for player in players %}
+    <div data-role="fieldcontain">
+    	<label for="slider">Player {{ player.name }}</label>
+    	<select name="slider" id="mute-{{ player.name }}" data-role="slider">
+    		<option value="off">Off</option>
+    		<option value="on">On</option>
+    	</select> 
+    </div>
+    {% end %}
+
+	</div><!-- /content -->
+
+  <!--
+	<div data-role="footer">
+		<h4>Page Footer</h4>
+	</div>
+	--><!-- /footer -->
+</div><!-- /page -->
+
+<script type="text/javascript">
+var suppressChangeEvents = false;
+
+function UpdateStatus(data) {
+  suppressChangeEvents = true;
+  for(var i=0;i<data.player_keys.length;i++) {
+    var player_name = data.player_keys[i]
+    var player = data.players[player_name];      
+    var target_val = player.mute ? 'off' : 'on';
+    $('#mute-' + player_name).val(target_val).trigger('keyup');
+  }  
+  suppressChangeEvents = false;
+}
+
+$(function(){
+  $.get('/status', {}, function(data){
+    UpdateStatus(data);
+  }, 'json');
+
+  
+  console.log('binding');
+  $('select').change(function(){
+    if (!suppressChangeEvents) {
+      $.get('/action', {player: $(this).attr('id').replace('mute-','') }, function(data){
+        UpdateStatus(data);
+      }, 'json');
+    }
+    else
+    {
+      console.log('suppressing event');
+    }
+  });
+});
+</script>
+</body>
+</html>
