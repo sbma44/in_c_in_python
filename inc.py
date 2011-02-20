@@ -4,14 +4,16 @@ from mingus.containers import *
 import OSC
 import music_loader as inc_io
 import ui
+try:
+    import json
+except Exception, e:
+    import simplejson as json
 from settings import *
 
 conductor = None
 
 def dblog(msg):
-    f = open('error.txt','a')
-    f.write("%s\n" % msg)
-    f.close()
+    conductor.send_message({'_':'log','message':msg})
 
 class Occam(object):
     """ OSC/MIDI Bridge """
@@ -101,6 +103,7 @@ class IndexHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("%sadmin.html" % TEMPLATE_DIR, title="In C Admin", players=conductor.players)
 
+
 class ActionHandler(tornado.web.RequestHandler):
     def get(self):    
         dblog('serving request')            
@@ -114,7 +117,7 @@ class ActionHandler(tornado.web.RequestHandler):
         if player_id<0 or player_id>=len(conductor.players):
             return
         
-        conductor.send_message('toggle/%d' % player_id)
+        conductor.send_message({'_': 'toggle', 'player': player_id })
         self.write('1')        
 
 
@@ -155,13 +158,16 @@ class Conductor(object):
 
 
     def send_message(self, msg):  
-        dblog('sending %s' % msg)
         try:      
             socket = self.webserver_pid==0 and self.web_tx or self.inc_tx
-            os.write(socket, "%s#\n" % msg.strip())
+
+            encoded_msg = json.dumps(msg)
+            if len(encoded_msg)>MAX_MESSAGE_SIZE:
+                dblog('Error: JSON package too large.')
+            else:
+                os.write(socket, "%s\n" % encoded_msg)
         except Exception, e:
             dblog(str(e))
-        dblog('sent')
 
         
     def check_messages(self):
@@ -174,7 +180,7 @@ class Conductor(object):
         
         data = None
         try:
-            data = os.read(socket, 1024)
+            data = os.read(socket, MAX_MESSAGE_SIZE)
         except Exception, e:
             return []
                 
@@ -187,13 +193,14 @@ class Conductor(object):
         if messages[-1]=='':
             del messages[-1]
 
-        if len(messages[-1])>0 and messages[-1][-1]!='#':
-            self._spare_buffer = t
-            del messages[-1]
-            
-        messages = map(lambda x: x[:-1], messages)
+        decoded_messages = []
+        for m in messages:
+            try:
+                decoded_messages.append(json.loads(m))
+            except:
+                decoded_messages.append({'_': 'decode_failure', 'data': m})
 
-        return messages
+        return decoded_messages
 
             
     def toggle_player(self, i):
@@ -286,13 +293,16 @@ class Conductor(object):
     def deal_with_input(self):
         msgs = self.check_messages()
         for m in msgs:
-            args = m.split('/')
-            if args[0]=='toggle':
+            if m['_']=='toggle':
                 try:
-                    player_id = int(args[1])
+                    player_id = int(m['player'])
                 except:
                     return
                 self.toggle_player(player_id)
+            elif m['_']=='decode_failure':
+                print "Failed to decode JSON message: %s" % m['data']
+            elif m['_']=='log':
+                print "LOG: %s" % m['message']
     
     def loop(self):
         print "Starting loop..."
