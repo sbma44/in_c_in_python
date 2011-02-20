@@ -1,9 +1,30 @@
 import inc
-from settings import *
+from mingus.containers import *
 try:
     import json
 except Exception, e:
     import simplejson as json
+from settings import *
+
+class NoteEvent(Note):
+    def __init__(self, name='C', octave=4, dynamics={}, duration=1, is_rest=False):
+        if not is_rest:
+            Note.__init__(self, str(name), int(octave), dynamics) # old-style call due to Mingus not using new-style inheritance (ugh)
+        self.is_rest = is_rest
+        self.duration = int(duration)        
+
+    def to_tuple(self):
+        return (self.name, self.octave, self.dynamics, self.duration, self.is_rest)
+
+    @staticmethod
+    def from_tuple(t):
+        return NoteEvent(name=t[0], octave=t[1], dynamics=t[2], duration=t[3], is_rest=t[4])
+
+    def __repr__(self):
+        if self.is_rest:
+            return "REST/%d" % self.duration
+        else:
+            return "%s/%d" % (Note.__repr__(self), self.duration)
 
 def generate_json(out_file=None):
     complete_piece = {}
@@ -20,10 +41,10 @@ def generate_json(out_file=None):
         
             (tone, duration) = l.split(',')
             if tone.upper().strip()=='R':
-                note = inc.NoteEvent(is_rest=True, duration=int(duration))
+                note = NoteEvent(is_rest=True, duration=int(duration))
             else:
                 (name, octave) = tone.split('-')
-                note = inc.NoteEvent(name=name, octave=int(octave), duration=duration, dynamics={}, is_rest=False)
+                note = NoteEvent(name=name, octave=int(octave), duration=duration, dynamics={}, is_rest=False)
     
             complete_piece[i].append(note.to_tuple())
 
@@ -36,7 +57,7 @@ def load():
     f = open(JSON_FILENAME)
     j = json.load(f)
     for (i, note_events) in j.items():
-        j[i] = map(lambda x: inc.NoteEvent.from_tuple(x), note_events)        
+        j[i] = map(lambda x: NoteEvent.from_tuple(x), note_events)        
     return j
 
 if __name__ == '__main__':
