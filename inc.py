@@ -1,4 +1,4 @@
-import sys, time, os, signal
+import sys, time, os, signal, fcntl
 import tornado.httpserver, tornado.ioloop, tornado.web
 from mingus.containers import *
 import OSC
@@ -7,6 +7,11 @@ import ui
 from settings import *
 
 conductor = None
+
+def dblog(msg):
+    f = open('error.txt','a')
+    f.write("%s\n" % msg)
+    f.close()
 
 class Occam(object):
     """ OSC/MIDI Bridge """
@@ -65,6 +70,7 @@ class Player(object):
         self.channel = channel
         self.velocity = 70
         self.last_note = None
+        self.mute = False
     
     def increase_velocity(self):
         self.velocity = min(self.velocity + 10, 110)
@@ -76,12 +82,12 @@ class Player(object):
         # note param is not currently used, but would be necessary if we added support for chords
         # global conductor
         if self.last_note is not None:
-            print "stopping note %s" % str(self.last_note)
+            # print "stopping note %s" % str(self.last_note)
             conductor.occam.stop_Note(self.last_note, self.channel)
             self.last_note = None            
     
     def play_note(self, note):
-        print "playing note %s" % str(note)
+        # print "playing note %s" % str(note)
         # global conductor
         conductor.occam.play_Note(note, self.channel, self.velocity)        
         self.last_note = note
@@ -91,9 +97,25 @@ class Player(object):
 
 
 
-class AdminHandler(tornado.web.RequestHandler):
+class IndexHandler(tornado.web.RequestHandler):
     def get(self):
-        self.render("%sadmin.html" % TEMPLATE_DIR, title="In C Admin", pieces=self.pieces)
+        self.render("%sadmin.html" % TEMPLATE_DIR, title="In C Admin", players=conductor.players)
+
+class ActionHandler(tornado.web.RequestHandler):
+    def get(self):    
+        dblog('serving request')            
+        try:
+            player_id = int(self.get_argument('player'))
+        except:
+            return
+
+        global conductor
+        
+        if player_id<0 or player_id>=len(conductor.players):
+            return
+        
+        conductor.send_message('toggle/%d' % player_id)
+        self.write('1')        
 
 
 
@@ -114,7 +136,14 @@ class Conductor(object):
 
         # interprocess stuff
         self.webserver_pid = None
-        self.rx, self.tx = os.pipe() # set up interprocess communication
+        self.web_rx, self.web_tx = os.pipe()
+        self.inc_rx, self.inc_tx = os.pipe()
+        # set pipes to not block
+        fcntl.fcntl(self.web_rx, fcntl.F_SETFL, os.O_NONBLOCK)
+        fcntl.fcntl(self.web_tx, fcntl.F_SETFL, os.O_NONBLOCK)
+        fcntl.fcntl(self.inc_rx, fcntl.F_SETFL, os.O_NONBLOCK)
+        fcntl.fcntl(self.inc_tx, fcntl.F_SETFL, os.O_NONBLOCK)
+        self._spare_buffer = ['', '']
 
         # initialize player objects
         self.players = []
@@ -124,6 +153,61 @@ class Conductor(object):
         # create MIDI bridge
         self.occam = Occam()
 
+
+    def send_message(self, msg):  
+        dblog('sending %s' % msg)
+        try:      
+            socket = self.webserver_pid==0 and self.web_tx or self.inc_tx
+            os.write(socket, "%s#\n" % msg.strip())
+        except Exception, e:
+            dblog(str(e))
+        dblog('sent')
+
+        
+    def check_messages(self):
+        if self.webserver_pid!=0:
+            socket = self.web_rx
+            buf_i = 0
+        else:    
+            socket = self.inc_rx
+            buf_i = 1
+        
+        data = None
+        try:
+            data = os.read(socket, 1024)
+        except Exception, e:
+            return []
+                
+        if len(self._spare_buffer):
+            data = "%s%s" % (self._spare_buffer[buf_i], data)
+            self._spare_buffer[buf_i] = ''
+            
+        messages = data.split("\n")
+
+        if messages[-1]=='':
+            del messages[-1]
+
+        if len(messages[-1])>0 and messages[-1][-1]!='#':
+            self._spare_buffer = t
+            del messages[-1]
+            
+        messages = map(lambda x: x[:-1], messages)
+
+        return messages
+
+            
+    def toggle_player(self, i):
+        if type(i) is not int:
+            return
+        if i<0 or i>=len(self.players):
+            return
+            
+        global conductor
+        conductor.players[i].mute = not conductor.players[i].mute
+        if conductor.players[i].last_note is not None:
+            conductor.players[i].stop_note(conductor.players[i].last_note)
+
+        print "player %d muted: %s" % (i, str(conductor.players[i].mute))
 
     def _build_piece_events(self):
         # play event example (note: not actual piece data)
@@ -181,7 +265,8 @@ class Conductor(object):
             "static_path": os.path.join(os.path.dirname(__file__), "web", "static"),
         }
         self.application = tornado.web.Application([
-            (r"/", ui.AdminHandler),
+            (r'/', IndexHandler),
+            (r'/action', ActionHandler)
         ], **settings)
         
         self.webserver_pid = os.fork()
@@ -192,25 +277,30 @@ class Conductor(object):
                 
                 
     def muster(self):
-        print "Staging..."
-        self.players[0].piece = '1'
-        self.players[0].channel = 1
-        self.players[0].offset = 0
+        for i in range(1, 6):
+            self.players[i].piece = str(i)
+            self.players[i].channel = i
+            self.players[i].offset = 0
 
-        self.players[1].piece = '2'
-        self.players[1].channel = 2
-        self.players[1].offset = 0
-
+    
+    def deal_with_input(self):
+        msgs = self.check_messages()
+        for m in msgs:
+            args = m.split('/')
+            if args[0]=='toggle':
+                try:
+                    player_id = int(args[1])
+                except:
+                    return
+                self.toggle_player(player_id)
     
     def loop(self):
         print "Starting loop..."
         while True:            
             for (i,player) in enumerate(self.players):
-                if player.piece is None:
+                if player.piece is None or player.mute:
                     continue
                 
-                # print player
-
                 events = self.piece_events[player.piece][(self.tic + player.offset) % self.piece_lengths[player.piece]]
                 if len(events)==0:
                     continue
@@ -224,7 +314,9 @@ class Conductor(object):
                                     
             time.sleep(self.time_interval)    
             self.tic += 1           
-            print self.tic 
+            # print self.tic 
+            
+            self.deal_with_input()
             
             time.sleep(self.time_interval)
             
@@ -247,8 +339,8 @@ def main():
     
     try:
         conductor.loop()
-    except:
-        pass
+    except Exception, e:
+        raise e
     finally:
         conductor.finish()
 
