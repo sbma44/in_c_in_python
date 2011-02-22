@@ -2,7 +2,7 @@ In C (in Python)
 ================
 *In C* is an experimental minimalist musical composition created by Terry Riley in 1964. You can read all about it here:
 
-* http://en.wikipedia.org/wiki/In_C
+* [http://en.wikipedia.org/wiki/In_C](http://en.wikipedia.org/wiki/In_C)
 
 But the gist of it is this: there are 53 short musical motives included in the piece (I am not a musician, but I usually think of a motive as a vignette).  Some number of musicians -- the piece's directions suggest 35, though more or fewer are allowed -- play these pieces in a repeating manner.  Each musician is self-directed, both in terms of how they play the motive and when they proceed to a new one.  Their only obligation is to keep time with the rest of the performance (one player serves a dedicated metronome-like function). Players may advance to new motives, and may skip motives, but may never go back.
 
