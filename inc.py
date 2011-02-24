@@ -52,6 +52,34 @@ class ActionHandler(tornado.web.RequestHandler):
         self.write(conductor.last_state_json)
         conductor.log('served result in %f seconds' % (time.time() - start_time))
 
+
+class NoteHospice(object):
+    """ They will receive the very best of care, but these notes are dying """
+    def __init__(self):
+        super(NoteHospice, self).__init__()
+        self.notes = []
+    
+    def add(self, player, note):
+        self.notes.append( [note, player, note.duration] )
+    
+    def still_playing(self):
+        return len(self.notes)>0
+    
+    def cycle(self):
+        to_delete = []
+        for i in range(0, len(self.notes)):
+            # decrement duration            
+            self.notes[i][2] = self.notes[i][2] - 1
+
+            # stop a note if it's at zero
+            if self.notes[i][2]<=0:
+                self.notes[i][1].stop_note(self.notes[i][0])
+                to_delete.append(i)
+                
+        for i in reversed(sorted(to_delete)):
+            self.notes.pop(i)
+    
+
 class Conductor(object):    
     def __init__(self):
         super(Conductor, self).__init__()
@@ -65,7 +93,8 @@ class Conductor(object):
         self._build_piece_events()
         self.piece_lengths = {}
         for (i,p) in self.piece_events.items():
-            self.piece_lengths[i] = len(self.piece_events[i])        
+            self.piece_lengths[i] = len(self.piece_events[i]) 
+        self.note_hospice = NoteHospice()       
 
         # interprocess stuff
         self.webserver_pid = None
@@ -172,6 +201,10 @@ class Conductor(object):
         # play event example (note: not actual piece data)
         # { 1: [    [ (False = Note Off|True= Note On, Note) ]    ] }
         # { 2: [ [(True, "C#")], [], [], [(False, "C#"), (True, "D")], [], [(False, "D")] ] }
+        #
+        # NOTE: "note off" events are deprecated; a superior but slightly more computationally demanding note-expiration
+        # mechanism. Using the "player piano roll" approach created here led to some non-expiring notes, and I didn't
+        # feel like tracking down what was sure to be a hellacious bug
         self.piece_events = {}
 
         currently_playing = {}
@@ -283,6 +316,9 @@ class Conductor(object):
     def loop(self):
         print "Starting loop..."
         while True:            
+            
+            start = time.time()
+            
             for (i,player) in enumerate(self.players):
                 if player.piece is None or player.mute:
                     continue
@@ -295,10 +331,15 @@ class Conductor(object):
                     for (note_on, note) in events:                            
                         if note_on:
                             player.play_note(note)
-                        else:
-                            player.stop_note(note)
+                            self.note_hospice.add(player, note)
 
-            time.sleep(self.time_interval)    
+            end = time.time()
+
+            time.sleep(self.time_interval - (end-start))    
+
+            # kill notes that need to be killed
+            self.note_hospice.cycle()
+
             self.tic += 1           
 
             self.handle_messages()
@@ -312,9 +353,12 @@ class Conductor(object):
         os.kill(self.webserver_pid, signal.SIGTERM) 
 
         # silence lingering notes
-        for p in self.players:
-            if p.last_note is not None:
-                p.stop_note(p.last_note)
+        while self.note_hospice.still_playing():
+            self.note_hospice.cycle()
+
+        # for p in self.players:
+        #     if p.last_note is not None:
+        #         p.stop_note(p.last_note)
 
 def main():
     global conductor
