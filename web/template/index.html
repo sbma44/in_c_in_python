@@ -15,27 +15,28 @@
 	</div><!-- /header -->
 
 	<div data-role="content">	
-
-    {% for player in players %}
-    <!--<div data-role="fieldcontain">
-    	<label for="slider">Player {{ player.name }}</label>
-    	<select name="slider" id="mute-{{ player.name }}" data-role="slider">
-    		<option value="off">Off</option>
-    		<option value="on">On</option>
-    	</select> 
-    </div>
-    -->
-    
     <div data-role="fieldcontain">
-     	<fieldset data-role="controlgroup">
-        <!-- <legend>Player {{ player.name }}</legend> -->
-    		<input type="checkbox" checked="true" name="mute-{{ player.name }}" id="mute-{{ player.name }}" class="mute-button custom" />
-    		<label for="mute-{{ player.name }}">Player {{ player.name }}</label>
-        </fieldset>
-    </div>
-    {% end %}
+      <fieldset data-role="controlgroup">
 
-	</div><!-- /content -->
+        {% for player in players %}
+
+    		<input type="checkbox" name="mute-{{ player.name }}" id="mute-{{ player.name }}" class="mute-button custom" />
+    		<label for="mute-{{ player.name }}">Player {{ player.name }}</label>
+                
+        {% end %}
+
+      </fieldset>
+    </div>
+	</div>
+	
+  {% for player in players %}
+	
+	<div data-role="fieldcontain">
+	  <label for="slider={{ player.name }}">&nbsp;</label>
+   	<input type="range" name="slider" id="slider-{{ player.name }}" value="0" min="0" max="127"  />
+  </div>
+	
+	{% end %}
 
   <!--
 	<div data-role="footer">
@@ -45,35 +46,44 @@
 </div><!-- /page -->
 
 <script type="text/javascript">
-var suppressChangeEvents = false;
+
+function UpdateSlider(sid, value) {
+  $(sid).val(value);
+  var hyperlink = $(sid).parent().find('a.ui-slider-handle');
+  var max_range = parseInt(hyperlink.attr('aria-valuemax'));
+  hyperlink.css('left',(parseFloat($(sid).val() / max_range) * 100.0) + '%');
+}
+
+function ToggleCheckbox(cbid, value) {
+  if(value) {
+    $(cbid).attr('checked',value).parent().find('label').addClass('ui-btn-active').find('.ui-icon').removeClass('ui-icon-checkbox-off').addClass('ui-icon-checkbox-on');    
+  }
+  else {
+    $(cbid).attr('checked',value).parent().find('label').removeClass('ui-btn-active').find('.ui-icon').addClass('ui-icon-checkbox-off').removeClass('ui-icon-checkbox-on');
+  }
+}
 
 function UpdateStatus(data) {
+  console.log('updating UI status');
   for(var i=0;i<data.player_keys.length;i++) {
     var player_name = data.player_keys[i]
     var player = data.players[player_name];      
     if ($('#mute-' + player_name).attr('checked')==player.mute) {
-      $('#mute-' + player_name).trigger('click', [true]);
+      ToggleCheckbox('#mute-' + player_name, player.mute);
     }
   }  
 }
 
 $(function(){
   $.get('/status', {}, function(data){
-    //UpdateStatus(data);
+    UpdateStatus(data);
   }, 'json');
 
-  
-  console.log('binding');
-  $('input.mute-button').change(function(event, suppress_ajax){
-    if(!suppress_ajax) {
-      console.log('FIRING');
-      $.get('/action', {player: $(this).attr('id').replace('mute-','') }, function(data){
-        //UpdateStatus(data);
-      }, 'json');
-    }
-    else {
-      console.log('suppressed event firing')
-    }
+  $('input.mute-button').change(function(){
+    $.get('/action', {player: $(this).attr('id').replace('mute-','') }, function(data){
+      console.log('sending ajax call');
+      UpdateStatus(data);
+    }, 'json');    
   });
 });
 </script>
