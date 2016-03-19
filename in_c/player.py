@@ -1,52 +1,80 @@
-try:
-    import json
-except Exception, e:
-    import simplejson as json
+import json
+import uuid
+from functools import partial
 
+import pyuv
 
-class Player(object):    
-    def __init__(self, conductor, piece=None, offset=0, octave_shift=0, instrument=None, channel=None):
-        self.name = ''
+from in_c.settings import TIC_DURATION
+
+import logging
+logger = logging.getLogger('in_c')
+logger.setLevel(logging.DEBUG)
+
+class Player(object):
+    def __init__(self, conductor, name='', piece=None, offset=0, octave_shift=0, instrument=None, channel=None):
+        self.name = name
+        self.uuid = uuid.uuid4()
         self.key = -1
+        self.velocity = 70
+        self.muted = False
+
         self.conductor = conductor
         self.piece = piece
         self.offset = offset
         self.octave_shift = octave_shift
         self.instrument = instrument
         self.channel = channel
-        self.velocity = 70
-        self.last_note = None
-        self.mute = False
-    
-    def increase_velocity(self):
-        self.velocity = min(self.velocity + 10, 110)
-        
-    def decrease_velocity(self):
-        self.velocity = max(self.velocity - 10, 0)
-    
-    def stop_note(self, note=None):
-        # note param is not currently used, but would be necessary if we added support for chords
-        if self.last_note is not None:
-            # print "stopping note %s" % str(self.last_note)
-            self.conductor.occam.stop_Note(self.last_note, self.channel)
-            self.last_note = None            
-    
-    def play_note(self, note):
-        # print "playing note %s" % str(note)
-        self.conductor.occam.play_Note(note, self.channel, self.velocity)        
-        self.last_note = note
-        
+
+        self.timers = {}
+
+    def __hash__(self):
+        return self.uuid.int
+
     def __str__(self):
         return "<Player %s/%d/%d>" % (self.piece, self.channel, self.velocity)
-        
-    def to_dict(self):
-        return {'piece': self.piece, 'offset': self.offset, 'octave_shift': self.octave_shift, 'instrument': self.instrument, 'channel': self.channel, 'velocity': self.velocity, 'mute': self.mute}
 
-    def from_dict(self, data):
-        self.piece = str(data['piece'])
-        self.offset = int(data['offset'])
-        self.octave_shift = int(data['octave_shift'])
-        self.instrument = data['instrument']
-        self.channel = data['channel'] is not None and int(data['channel']) or None
-        self.velocity = int(data['velocity'])
-        self.mute = data['mute']
+    def __getstate__(self):
+        return {
+            'uuid': self.uuid,
+            'name': self.name,
+            'piece': self.piece,
+            'offset': self.offset,
+            'octave_shift': self.octave_shift,
+            'instrument': self.instrument,
+            'channel': self.channel,
+            'velocity': self.velocity,
+            'key': self.key,
+            'mute': self.mute,
+            'channel': self.channel
+        }
+
+    def __setstate__(self, data):
+        for attr in data:
+            setattr(self, attr, data[attr])
+
+    def increase_velocity(self):
+        self.velocity = min(self.velocity + 10, 110)
+
+    def decrease_velocity(self):
+        self.velocity = max(self.velocity - 10, 0)
+
+    def mute(self):
+        self.muted = not self.muted
+
+    def play_note(self, note):
+        logger.debug('playing note {}'.format(note))
+
+        if str(note) in self.timers:
+            self.timers[str(note)].stop()
+        else:
+            self.timers[str(note)] = pyuv.Timer(self.conductor.loop)
+
+        self.conductor.audio.play(note, self.channel, self.velocity)
+        self.timers[str(note)].start(partial(self.stop_note, note), note.duration * TIC_DURATION, 0)
+
+    def stop_note(self, note, *args):
+        self.conductor.audio.stop(note, self.channel)
+
+    def finish(self):
+        for timer in self.timers:
+            self.timers[timer].stop()
