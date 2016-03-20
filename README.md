@@ -16,6 +16,8 @@ The project is not yet complete, although all major components are done (in a pr
 * managing the initial "lobby" where players are recruited prior to the piece commencing
 * tracking down a bug wherein some notes are not turned off
 * providing web hooks for advancing through motives and controlling velocity
+* redoing the web stuff in react
+* writing tests
 
 Running the Program
 -------------------
@@ -27,9 +29,9 @@ System Architecture
 -------------------
 Running the *inc.py* script creates two processes: a Tornado-based webserver and an object I call the "conductor", which is responsible for the management of the piece and for generating the musical events associated with it.
 
-This program generates Note On/Note Off events using Open Sound Control (OSC).  You should define an OSC endpoint that can generate noises using such events; it should expect to receive them on a number of channels equal to the number of players. I personally use an OS X program called [Occam](http://www.illposed.com/software/occam), which translates OSC messages into MIDI events.  These events are then picked up by [Ableton Live](http://www.ableton.com) and turned into music.
+This program formerly used Open Sound Control (OSC) as a bridge to MIDI. It now generates MIDI on a virtual port directly. This is simpler, but not routable over IP. The lackluster OS X offerings in the OSC->MIDI bridge space were the motivating factor: OSCulator requires a lot of manual control and Occam is not available as an x86 binary. It's certainly possible to make this IP-routable if desired, though.
 
-Note that multiple OSC endpoints can be used.  This may be desirable for managing load or for providing spatial separation for the generated instruments.
+I recommend using [Ableton Live](http://www.ableton.com) to pick up the MIDI events and render them as sound. But any MIDI software capable of receiving simultaneous multichannel input should be up to the task.
 
 Security
 --------
