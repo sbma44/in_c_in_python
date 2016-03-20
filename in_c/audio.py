@@ -1,21 +1,14 @@
-import liblo
+import rtmidi_python as rtmidi
 from in_c.settings import *
 
 class OSC2MIDI(object):
     """ OSC/MIDI Bridge """
     def __init__(self, host='127.0.0.1', port=8000):
-        self.target = liblo.Address(host, port)
+        self.midi = rtmidi.MidiOut()
+        self.midi.open_virtual_port('in_c')
 
     def play(self, note, channel, velocity=70):
-        msg = liblo.Message('/osc/midi/out/noteOn/{}'.format(channel))
-        msg.add(('i', note.midi))
-        msg.add(('i', velocity))
-        msg.add(('i', 1))
-        liblo.send(self.target, msg)
+        self.midi.send_message([min(159, 143 + channel), note.midi, velocity])
 
     def stop(self, note, channel):
-        msg = liblo.Message('/osc/midi/out/noteOff/{}'.format(channel))
-        msg.add(('i', note.midi))
-        msg.add(('i', 120))
-        msg.add(('i', 0))
-        liblo.send(self.target, msg)
+        self.midi.send_message([min(143, 127 + channel), note.midi, 70])

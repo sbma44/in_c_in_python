@@ -52,6 +52,9 @@ class Player(object):
         for attr in data:
             setattr(self, attr, data[attr])
 
+        assert channel > 0 and channel < 17
+        assert velocity > 0 and velocity <= 110
+
     def increase_velocity(self):
         self.velocity = min(self.velocity + 10, 110)
 
@@ -76,5 +79,4 @@ class Player(object):
         self.conductor.audio.stop(note, self.channel)
 
     def finish(self):
-        for timer in self.timers:
-            self.timers[timer].stop()
+        pass
