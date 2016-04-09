@@ -70,11 +70,11 @@ class Player(object):
         else:
             self.timers[str(note)] = pyuv.Timer(self.conductor.loop)
 
-        self.conductor.audio.play(note, self.channel, self.velocity)
+        self.conductor.audio.play(self.conductor.tic_count, note, self.channel, self.velocity)
         self.timers[str(note)].start(partial(self.stop_note, note), note.duration * TIC_DURATION, 0)
 
     def stop_note(self, note, *args):
-        self.conductor.audio.stop(note, self.channel)
+        self.conductor.audio.stop(self.conductor.tic_count, note, self.channel)
 
     def finish(self):
         pass

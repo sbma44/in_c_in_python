@@ -1,6 +1,6 @@
 import os.path
 
-OSC_SERVERS = [{'host': '127.0.0.1', 'port': 8000}]
+AUDIO_SERVER = {'host': '127.0.0.1', 'port': 8000}
 
 INC_PIECE_DIR = os.path.join(os.path.dirname(__file__), 'src', 'InC')
 INC_SOURCE = os.path.join(os.path.dirname(__file__), 'src', 'InC.json')
