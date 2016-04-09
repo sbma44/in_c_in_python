@@ -14,7 +14,6 @@ class Player(object):
     def __init__(self, conductor, name='', piece=None, offset=0, octave_shift=0, instrument=None, channel=None):
         self.name = name
         self.uuid = uuid.uuid4()
-        self.key = -1
         self.velocity = 70
         self.muted = False
 
@@ -43,7 +42,6 @@ class Player(object):
             'instrument': self.instrument,
             'channel': self.channel,
             'velocity': self.velocity,
-            'key': self.key,
             'mute': self.mute,
             'channel': self.channel
         }
