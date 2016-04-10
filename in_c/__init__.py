@@ -5,14 +5,13 @@ import signal
 import multiprocessing
 import json
 import signal
+import sched
 from functools import partial
 
 import logging
 logging.basicConfig()
 logger = logging.getLogger('in_c')
 logger.setLevel(logging.INFO)
-
-import pyuv
 
 import in_c.audio
 import in_c.web
@@ -38,8 +37,9 @@ class Conductor(object):
         self.web_q = multiprocessing.Queue()
         self.inc_q = multiprocessing.Queue()
 
-        # event loop
-        self.loop = pyuv.Loop.default_loop()
+        # event scheduler
+        self.scheduler = sched.scheduler(time.time, time.sleep)
+        self.tic_event = None
 
         # initialize player objects
         self.players = {}
@@ -96,7 +96,9 @@ class Conductor(object):
             elif action=='decode_failure':
                 LOGGER.warn('Failed to decode JSON message: {}'.format(src))
 
-    def tic(self, timer_handle):
+    def tic(self):
+        self.tic_event = self.scheduler.enter(TIC_DURATION, 10, self.tic)
+
         logger.debug('tic %d', self.tic_count)
         for (i, player_uuid) in enumerate(self.players):
             player = self.players[player_uuid]
@@ -115,9 +117,8 @@ class Conductor(object):
         self.tic_count = self.tic_count + 1
 
     def start(self):
-        self.tic_timer = pyuv.Timer(self.loop)
-        self.tic_timer.start(self.tic, 0, TIC_DURATION)
-        self.loop.run()
+        self.scheduler.enter(TIC_DURATION, 10, self.tic)
+        self.scheduler.run()
 
     def start_web(self):
         self.web_process = multiprocessing.Process(target=in_c.web.start, args=(self.inc_q, self.web_q))
@@ -130,8 +131,8 @@ class Conductor(object):
 
         logger.info('Stopping')
 
-        if hasattr(self, 'tic_timer'):
-            self.tic_timer.stop()
+        # stop the loop
+        self.scheduler.cancel(self.tic_event)
 
         for player_uuid in self.players:
             self.players[player_uuid].finish()

@@ -1,8 +1,6 @@
 import json
 import uuid
-from functools import partial
-
-import pyuv
+from collections import defaultdict
 
 from in_c.settings import TIC_DURATION
 
@@ -24,6 +22,7 @@ class Player(object):
         self.instrument = instrument
         self.channel = channel
 
+        self.simultaneous_play_count = defaultdict(int)
         self.timers = {}
 
     def __hash__(self):
@@ -65,16 +64,14 @@ class Player(object):
     def play_note(self, note):
         logger.debug('playing note {}'.format(note))
 
-        if str(note) in self.timers:
-            self.timers[str(note)].stop()
-        else:
-            self.timers[str(note)] = pyuv.Timer(self.conductor.loop)
-
         self.conductor.audio.play(note, self.channel, self.velocity)
-        self.timers[str(note)].start(partial(self.stop_note, note), note.duration * TIC_DURATION, 0)
+        self.timers[str(note)] = self.conductor.scheduler.enter(note.duration * TIC_DURATION, 1, self.stop_note, (note,))
+        self.simultaneous_play_count[str(note)] += 1
 
     def stop_note(self, note, *args):
-        self.conductor.audio.stop(note, self.channel)
+        self.simultaneous_play_count[str(note)] -= 1
+        if self.simultaneous_play_count[str(note)] == 0:
+            self.conductor.audio.stop(note, self.channel)
 
     def finish(self):
         pass
