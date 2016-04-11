@@ -1,91 +1,52 @@
-<!DOCTYPE html> 
-<html> 
-	<head> 
-	<title>In C</title> 
-	<link rel="stylesheet" href="/static/jquery.mobile-1.0a3.min.css" />
-	<script type="text/javascript" src="/static/jquery-1.4.3.min.js"></script>
-	<script type="text/javascript" src="/static/jquery.mobile-1.0a3.min.js"></script>
-</head> 
-<body> 
+<!-- index.html -->
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>React Tutorial</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/15.0.1/react.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/react/15.0.1/react-dom.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-core/5.8.23/browser.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/0.3.5/marked.min.js"></script>
+  </head>
+  <body>
+    <div id="content"></div>
+    <script type="text/babel">
+    var Player = React.createClass({
+      render: function() {
+        return (
+          <div className="player">
+            <div className="name">{this.props.name}</div>
+            <div className="piece">{this.props.piece}</div>
+            <div className="octave">{this.props.octave}</div>
+          </div>
+        );
+      }
+    });
 
-<div data-role="page">
+    var PlayerList = React.createClass({
+      render: function() {
+        var players = [];
+        var state = this.props.state;
+        Object.keys(state.players).forEach(function(playerId) {
+          players.push(<Player key={playerId} name={state.players[playerId].name} piece={state.players[playerId].piece} octave={state.players[playerId].octave_shift} />);
+        });
 
-	<div data-role="header">
-		<h1>In C</h1>
-	</div><!-- /header -->
+        return (
+          <div className="playerList">
+            {players}
+          </div>
+        );
+      }
+    });
 
-	<div data-role="content">	
-    <div data-role="fieldcontain">
-      <fieldset data-role="controlgroup">
-
-        {% for player in players %}
-
-    		<input type="checkbox" name="mute-{{ player.name }}" id="mute-{{ player.name }}" class="mute-button custom" />
-    		<label for="mute-{{ player.name }}">Player {{ player.name }}</label>
-                
-        {% end %}
-
-      </fieldset>
-    </div>
-	</div>
-	
-  {% for player in players %}
-	
-	<div data-role="fieldcontain">
-	  <label for="slider={{ player.name }}">&nbsp;</label>
-   	<input type="range" name="slider" id="slider-{{ player.name }}" value="0" min="0" max="127"  />
-  </div>
-	
-	{% end %}
-
-  <!--
-	<div data-role="footer">
-		<h4>Page Footer</h4>
-	</div>
-	--><!-- /footer -->
-</div><!-- /page -->
-
-<script type="text/javascript">
-
-function UpdateSlider(sid, value) {
-  $(sid).val(value);
-  var hyperlink = $(sid).parent().find('a.ui-slider-handle');
-  var max_range = parseInt(hyperlink.attr('aria-valuemax'));
-  hyperlink.css('left',(parseFloat($(sid).val() / max_range) * 100.0) + '%');
-}
-
-function ToggleCheckbox(cbid, value) {
-  if(value) {
-    $(cbid).attr('checked',value).parent().find('label').addClass('ui-btn-active').find('.ui-icon').removeClass('ui-icon-checkbox-off').addClass('ui-icon-checkbox-on');    
-  }
-  else {
-    $(cbid).attr('checked',value).parent().find('label').removeClass('ui-btn-active').find('.ui-icon').addClass('ui-icon-checkbox-off').removeClass('ui-icon-checkbox-on');
-  }
-}
-
-function UpdateStatus(data) {
-  console.log('updating UI status');
-  for(var i=0;i<data.player_keys.length;i++) {
-    var player_name = data.player_keys[i]
-    var player = data.players[player_name];      
-    if ($('#mute-' + player_name).attr('checked')==player.mute) {
-      ToggleCheckbox('#mute-' + player_name, player.mute);
-    }
-  }  
-}
-
-$(function(){
-  $.get('/status', {}, function(data){
-    UpdateStatus(data);
-  }, 'json');
-
-  $('input.mute-button').change(function(){
-    $.get('/action', {player: $(this).attr('id').replace('mute-','') }, function(data){
-      console.log('sending ajax call');
-      UpdateStatus(data);
-    }, 'json');    
-  });
-});
-</script>
-</body>
+    $.getJSON('http://127.0.0.1:8001/status', function(state) {
+      ReactDOM.render(
+        <PlayerList state={state} />,
+        document.getElementById('content')
+      );
+    });
+    </script>
+  </body>
 </html>

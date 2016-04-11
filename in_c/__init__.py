@@ -61,8 +61,8 @@ class Conductor(object):
 
     def send_state(self):
         m = { '_': 'state_xfer', 'players': {} }
-        for (i, p) in enumerate(self.players):
-            m['players'][p.uuid] = pickle.dumps(p)
+        for p in self.players:
+            m['players'][p] = self.players[p].__getstate__()
         self.web_q.put(m)
 
     def create_dummy_players(self):
@@ -77,7 +77,7 @@ class Conductor(object):
 
     def handle_messages(self):
         msgs = self.check_messages()
-        for (m, src) in msgs:
+        for m in msgs:
             action = m['_']
 
             if action=='toggle':

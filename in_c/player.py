@@ -11,7 +11,7 @@ logger.setLevel(logging.DEBUG)
 class Player(object):
     def __init__(self, conductor, name='', piece=None, offset=0, octave_shift=0, instrument=None, channel=None):
         self.name = name
-        self.uuid = uuid.uuid4()
+        self.uuid = uuid.uuid4().hex
         self.velocity = 70
         self.muted = False
 
@@ -41,7 +41,7 @@ class Player(object):
             'instrument': self.instrument,
             'channel': self.channel,
             'velocity': self.velocity,
-            'mute': self.mute,
+            'muted': self.muted,
             'channel': self.channel
         }
 

@@ -1,3 +1,5 @@
+import time
+import json
 import os.path
 
 import logging
@@ -6,7 +8,9 @@ logger = logging.getLogger('in_c')
 import tornado.httpserver, tornado.ioloop, tornado.web
 TEMPLATE_DIR = os.path.join(os.path.dirname(__file__), 'template')
 
-def check_messages(self, q):
+from in_c.settings import *
+
+def check_messages(q):
     messages = []
     while not q.empty():
         try:
@@ -15,6 +19,12 @@ def check_messages(self, q):
             pass
     return messages
 
+def wait_for_status(q):
+    while True:
+        resp = [m for m in check_messages(q) if m['_'] == 'state_xfer']
+        if len(resp) > 0:
+            return resp[-1]
+
 class IndexHandler(tornado.web.RequestHandler):
     def get(self):
         self.render("%sindex.html" % TEMPLATE_DIR, title="In C Admin", players=conductor.players)
@@ -22,14 +32,19 @@ class IndexHandler(tornado.web.RequestHandler):
 class StatusHandler(tornado.web.RequestHandler):
     def get(self):
         start_time = time.time()
-        self.application.inc_q.put({'_': 'status'})
 
-        # wait for the state update that should come back
-        messages = check_messages(self.application.web_q)
+        self.set_header("Content-Type", 'application/json; charset="utf-8"')
+        self.set_header("Access-Control-Allow-Origin", "http://127.0.0.1:8080")
 
-        self.write(json.dumps(messages, indent=2))
+        if (time.time() - self.application.in_c_status['checked']) > TIC_DURATION:
+            self.application.in_c_status['checked'] = time.time()
+            self.application.inc_q.put({'_': 'status'})
+            state = wait_for_status(self.application.web_q)
+            self.application.in_c_status['state'] = state
 
-        conductor.log('served result in %f seconds' % (time.time() - start_time))
+        self.write(json.dumps(self.application.in_c_status['state'], indent=2))
+
+        logger.info('served result in %f seconds' % (time.time() - start_time))
 
 class ActionHandler(tornado.web.RequestHandler):
     def get(self):
@@ -42,13 +57,13 @@ class ActionHandler(tornado.web.RequestHandler):
         self.application.inc_q.put({'_': 'toggle', 'uuid': player_uuid })
 
         # wait for the state update that should come back
-        state = webmonkey.web_q.get()
+        state = self.application.web_q.get()
         while conductor.last_state_update < start_time:
             conductor.handle_messages()
             time.sleep(0.01)
 
         self.write(conductor.last_state_json)
-        LOGGER.info('served result in %f seconds' % (time.time() - start_time))
+        logger.info('served result in %f seconds' % (time.time() - start_time))
 
 
 def start(inc_q, web_q):
@@ -62,6 +77,7 @@ def start(inc_q, web_q):
 
     app.inc_q = inc_q
     app.web_q = web_q
+    app.in_c_status = { 'checked': 0, 'state': None }
 
     http_server = tornado.httpserver.HTTPServer(app)
     http_server.listen(8001)
